@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commons Category Suggester</title>
+<style>
+  :root{
+    --bg:#f4f6fb; --card:#ffffff; --ink:#1b2430; --muted:#5b6675;
+    --line:#e2e7f0; --accent:#1a3c6e; --accent2:#2e6fd6; --bar:#dce7f7;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#11151c; --card:#1a2029; --ink:#e8edf5; --muted:#9aa6b6;
+           --line:#2a323e; --accent:#7fb0ff; --accent2:#5b93ef; --bar:#223049; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:720px;margin:0 auto;padding:28px 16px 60px;}
+  h1{font-size:22px;margin:0 0 4px;}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 22px;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+        padding:20px;margin-bottom:18px;}
+  .drop{border:2px dashed var(--line);border-radius:12px;padding:26px;text-align:center;
+        cursor:pointer;transition:.15s;}
+  .drop:hover,.drop.drag{border-color:var(--accent2);background:rgba(46,111,214,.05);}
+  .drop p{margin:6px 0 0;color:var(--muted);font-size:13px;}
+  .drop strong{color:var(--accent2);}
+  #preview{display:none;max-width:100%;max-height:300px;border-radius:10px;margin-top:14px;}
+  input[type=file]{display:none;}
+  .cap{width:100%;margin-top:14px;padding:10px 12px;border:1px solid var(--line);
+       border-radius:9px;background:var(--bg);color:var(--ink);font-size:14px;}
+  .row{display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap;}
+  button{background:var(--accent2);color:#fff;border:0;border-radius:9px;
+         padding:11px 20px;font-size:14px;font-weight:600;cursor:pointer;}
+  button:disabled{opacity:.5;cursor:not-allowed;}
+  .ghost{background:transparent;color:var(--muted);border:1px solid var(--line);}
+  .meta{color:var(--muted);font-size:12px;}
+  .res{margin-top:4px;}
+  .res h2{font-size:15px;margin:0 0 12px;}
+  .pred{margin-bottom:10px;}
+  .pred .top{display:flex;justify-content:space-between;font-size:14px;margin-bottom:3px;}
+  .pred .cat{font-weight:600;}
+  .pred .pct{color:var(--muted);font-variant-numeric:tabular-nums;}
+  .track{height:8px;background:var(--bar);border-radius:6px;overflow:hidden;}
+  .fill{height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent));border-radius:6px;width:0;
+        transition:width .5s ease;}
+  .err{color:#c0392b;font-size:13px;margin-top:10px;}
+  .spin{display:inline-block;width:16px;height:16px;border:2px solid var(--line);
+        border-top-color:var(--accent2);border-radius:50%;animation:s .7s linear infinite;vertical-align:-3px;}
+  @keyframes s{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Wikimedia Commons &mdash; Category Suggester</h1>
+  <p class="sub">Upload an image; the model suggests the most likely Commons categories. <span id="binfo"></span></p>
+
+  <div class="card">
+    <label class="drop" id="drop">
+      <div style="font-size:30px">&#128247;</div>
+      <strong>Click to choose an image</strong> or drag &amp; drop
+      <p>JPG / PNG / WebP</p>
+      <input type="file" id="file" accept="image/*">
+      <img id="preview" alt="preview">
+    </label>
+
+    <input class="cap" id="caption" type="text"
+           placeholder="Optional: title or description (helps events / abstract categories)">
+
+    <div class="row">
+      <button id="go" disabled>Suggest categories</button>
+      <button class="ghost" id="clear" type="button">Clear</button>
+      <span class="meta" id="status"></span>
+    </div>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div class="card res" id="resCard" style="display:none">
+    <h2>Suggestions</h2>
+    <div id="results"></div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const fileInput=$('#file'), drop=$('#drop'), preview=$('#preview'),
+      go=$('#go'), clearBtn=$('#clear'), statusEl=$('#status'), errEl=$('#err'),
+      resCard=$('#resCard'), results=$('#results'), caption=$('#caption');
+let chosen=null;
+
+fetch('/info').then(r=>r.json()).then(d=>{
+  $('#binfo').textContent = `Model: ${d.backbone} on ${d.device}, ${d.n_categories} categories.`;
+}).catch(()=>{});
+
+function setFile(f){
+  if(!f||!f.type.startsWith('image/')){errEl.textContent='Please choose an image file.';return;}
+  chosen=f; errEl.textContent='';
+  const url=URL.createObjectURL(f);
+  preview.src=url; preview.style.display='block';
+  go.disabled=false;
+}
+fileInput.addEventListener('change',e=>setFile(e.target.files[0]));
+['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('drag');}));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('drag');}));
+drop.addEventListener('drop',e=>{ if(e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
+
+clearBtn.addEventListener('click',()=>{
+  chosen=null; fileInput.value=''; preview.style.display='none'; preview.src='';
+  caption.value=''; go.disabled=true; resCard.style.display='none'; errEl.textContent=''; statusEl.textContent='';
+});
+
+go.addEventListener('click',async()=>{
+  if(!chosen) return;
+  errEl.textContent=''; go.disabled=true;
+  statusEl.innerHTML='<span class="spin"></span> running model&hellip;';
+  const fd=new FormData();
+  fd.append('image',chosen);
+  fd.append('caption',caption.value);
+  try{
+    const r=await fetch('/predict',{method:'POST',body:fd});
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.error||'Prediction failed');
+    render(d.predictions);
+    statusEl.textContent='';
+  }catch(e){
+    errEl.textContent=e.message; statusEl.textContent='';
+  }finally{ go.disabled=false; }
+});
+
+function render(preds){
+  resCard.style.display='block';
+  if(!preds||!preds.length){ results.innerHTML='<p class="meta">No confident categories.</p>'; return; }
+  const max=Math.max(...preds.map(p=>p.score),1e-6);
+  results.innerHTML=preds.map(p=>{
+    const pct=(p.score*100).toFixed(1);
+    const w=Math.max(2,(p.score/max)*100).toFixed(1);
+    return `<div class="pred">
+        <div class="top"><span class="cat">${escapeHtml(p.category)}</span>
+        <span class="pct">${pct}%</span></div>
+        <div class="track"><div class="fill" style="width:${w}%"></div></div></div>`;
+  }).join('');
+  // animate
+  requestAnimationFrame(()=>document.querySelectorAll('.fill').forEach(f=>{}));
+}
+function escapeHtml(s){return s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+</script>
+</body>
+</html>
